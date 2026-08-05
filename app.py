@@ -1,109 +1,126 @@
-import gradio as gr
+import os
+import tempfile
+import streamlit as st
+from dotenv import load_dotenv
+
+# ==========================
+# Load API Key
+# ==========================
+
+load_dotenv()
+
+load_dotenv()
+
+try:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+except Exception:
+    api_key = os.getenv("GOOGLE_API_KEY")
+
+if not api_key:
+    st.error("❌ GOOGLE_API_KEY not found.")
+    st.stop()
+
+# Make API key available to rag.py
+os.environ["GOOGLE_API_KEY"] = api_key
 
 from rag import process_pdf, ask_pdf
 
-history = []
+# ==========================
+# Page Configuration
+# ==========================
 
+st.set_page_config(
+    page_title="PDF Question Answering Assistant",
+    page_icon="📄",
+    layout="wide",
+)
 
-# -----------------------------
-# Upload & Index PDF
-# -----------------------------
-def upload_pdf(file):
-    global history
-    history = []
+st.title("📄 PDF Question Answering Assistant")
+st.write("Upload a PDF and ask questions about its contents using **Google Gemini + LangChain + ChromaDB**.")
 
-    if file is None:
-        return "Please upload a PDF first."
+# ==========================
+# Session State
+# ==========================
 
-    try:
-        result = process_pdf(file.name)
-        return result
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return f"❌ Error: {str(e)}"
+if "indexed" not in st.session_state:
+    st.session_state.indexed = False
 
+# ==========================
+# Sidebar
+# ==========================
 
-# -----------------------------
-# Chat Function
-# -----------------------------
-def chatbot(message, chat_history):
-    global history
+with st.sidebar:
 
-    if chat_history is None:
-        chat_history = []
+    st.header("📂 Upload PDF")
 
-    answer, history = ask_pdf(message, history)
-
-    chat_history.append(
-        {
-            "role": "user",
-            "content": message,
-        }
+    uploaded_pdf = st.file_uploader(
+        "Choose a PDF",
+        type=["pdf"]
     )
 
-    chat_history.append(
-        {
-            "role": "assistant",
-            "content": answer,
-        }
-    )
+    if uploaded_pdf is not None:
 
-    return "", chat_history
+        if st.button("📄 Index PDF", use_container_width=True):
 
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(uploaded_pdf.getbuffer())
+                pdf_path = tmp.name
 
-# -----------------------------
-# UI
-# -----------------------------
-with gr.Blocks(
-    title="PDF Question Answering Assistant",
-    theme=gr.themes.Soft(),
-) as demo:
+            with st.spinner("Indexing PDF..."):
 
-    gr.Markdown(
-        """
-# 📄 PDF Question Answering Assistant
+                try:
+                    result = process_pdf(pdf_path)
 
-Upload a PDF and ask anything about its contents.
+                    st.success(result)
 
-Powered by **Google Gemini + LangChain + ChromaDB**
-"""
-    )
+                    st.session_state.indexed = True
+                    st.session_state.history = []
 
-    with gr.Row():
+                except Exception as e:
+                    st.error(str(e))
 
-        pdf = gr.File(
-            label="Upload PDF",
-            file_types=[".pdf"],
-        )
+                finally:
+                    if os.path.exists(pdf_path):
+                        os.remove(pdf_path)
 
-        upload_btn = gr.Button("Index PDF")
+# ==========================
+# Chat History
+# ==========================
 
-    status = gr.Textbox(
-        label="Status",
-        interactive=False,
-    )
+for question, answer in st.session_state.history:
 
-    upload_btn.click(
-        fn=upload_pdf,
-        inputs=pdf,
-        outputs=status,
-    )
+    with st.chat_message("user"):
+        st.write(question)
 
-    chatbot_ui = gr.Chatbot(
-        type="messages",
-        height=450,
-    )
+    with st.chat_message("assistant"):
+        st.write(answer)
 
-    msg = gr.Textbox(
-        placeholder="Ask a question about your PDF..."
-    )
+# ==========================
+# Chat Input
+# ==========================
 
-    msg.submit(
-        fn=chatbot,
-        inputs=[msg, chatbot_ui],
-        outputs=[msg, chatbot_ui],
-    )
+if st.session_state.indexed:
 
-demo.launch()
+    question = st.chat_input("Ask a question about your PDF...")
+
+    if question:
+
+        with st.chat_message("user"):
+            st.write(question)
+
+        with st.spinner("Thinking..."):
+
+            answer, st.session_state.history = ask_pdf(
+                question,
+                st.session_state.history,
+            )
+
+        with st.chat_message("assistant"):
+            st.write(answer)
+
+else:
+
+    st.info("📄 Please upload and index a PDF first.")

@@ -41,11 +41,11 @@ embeddings = GoogleGenerativeAIEmbeddings(
 def process_pdf(pdf_path):
 
     print("\n========== PDF PROCESSING ==========\n")
+    # Reset DB
+    if os.path.exists(DB_PATH):
+        shutil.rmtree(DB_PATH, ignore_errors=True)
 
-if os.path.exists(DB_PATH):
-    shutil.rmtree(DB_PATH, ignore_errors=True)
-
-os.makedirs(DB_PATH, exist_ok=True)
+    os.makedirs(DB_PATH, exist_ok=True)
 
     # Load PDF
     loader = PyPDFLoader(pdf_path)
@@ -98,7 +98,12 @@ def ask_pdf(question, history):
         search_kwargs={"k": 5}
     )
 
-    docs = retriever.invoke(question)
+    # retrieve relevant documents
+    try:
+        docs = retriever.get_relevant_documents(question)
+    except Exception:
+        # fallback if method name differs
+        docs = retriever.invoke(question)
 
     if len(docs) == 0:
         answer = "I couldn't find that information in the PDF."

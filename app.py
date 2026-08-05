@@ -5,6 +5,9 @@ from rag import process_pdf, ask_pdf
 history = []
 
 
+# -----------------------------
+# Upload & Index PDF
+# -----------------------------
 def upload_pdf(file):
     global history
     history = []
@@ -12,22 +15,50 @@ def upload_pdf(file):
     if file is None:
         return "Please upload a PDF first."
 
-    return process_pdf(file.name)
+    try:
+        result = process_pdf(file.name)
+        return result
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return f"❌ Error: {str(e)}"
 
 
+# -----------------------------
+# Chat Function
+# -----------------------------
 def chatbot(message, chat_history):
     global history
 
+    if chat_history is None:
+        chat_history = []
+
     answer, history = ask_pdf(message, history)
 
-    chat_history.append((message, answer))
+    chat_history.append(
+        {
+            "role": "user",
+            "content": message,
+        }
+    )
+
+    chat_history.append(
+        {
+            "role": "assistant",
+            "content": answer,
+        }
+    )
 
     return "", chat_history
 
 
+# -----------------------------
+# UI
+# -----------------------------
 with gr.Blocks(
     title="PDF Question Answering Assistant",
-    theme=gr.themes.Soft()
+    theme=gr.themes.Soft(),
 ) as demo:
 
     gr.Markdown(
@@ -44,32 +75,35 @@ Powered by **Google Gemini + LangChain + ChromaDB**
 
         pdf = gr.File(
             label="Upload PDF",
-            file_types=[".pdf"]
+            file_types=[".pdf"],
         )
 
         upload_btn = gr.Button("Index PDF")
 
     status = gr.Textbox(
         label="Status",
-        interactive=False
+        interactive=False,
     )
 
     upload_btn.click(
-        upload_pdf,
+        fn=upload_pdf,
         inputs=pdf,
-        outputs=status
+        outputs=status,
     )
 
-    chatbot_ui = gr.Chatbot(height=450)
+    chatbot_ui = gr.Chatbot(
+        type="messages",
+        height=450,
+    )
 
     msg = gr.Textbox(
         placeholder="Ask a question about your PDF..."
     )
 
     msg.submit(
-        chatbot,
+        fn=chatbot,
         inputs=[msg, chatbot_ui],
-        outputs=[msg, chatbot_ui]
+        outputs=[msg, chatbot_ui],
     )
 
 demo.launch()
